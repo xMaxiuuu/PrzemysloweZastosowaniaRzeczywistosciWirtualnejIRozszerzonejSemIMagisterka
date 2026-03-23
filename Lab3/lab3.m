@@ -5,7 +5,7 @@ files = {'portfel1.jpeg', 'portfel2.jpeg', 'zegarek1.jpeg'};
 % Kalibracja
 checkerFiles = {'portfel1.jpeg', 'portfel2.jpeg', 'zegarek1.jpeg'};
 [imagePoints, boardSize] = detectCheckerboardPoints(checkerFiles);
-squareSize = 25; % Rozmiar boku kwadratu w mm (do dostosowania)
+squareSize = 25; % Rozmiar boku kwadratu w mm
 worldPoints = generateCheckerboardPoints(boardSize, squareSize);
 
 % Pobranie parametrów kamery
