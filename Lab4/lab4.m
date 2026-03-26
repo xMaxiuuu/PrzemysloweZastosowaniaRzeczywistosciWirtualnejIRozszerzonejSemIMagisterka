@@ -7,7 +7,7 @@ clear all; close all; clc;
 
 %% 2. Inicjalizacja kamery
 try
-    cam = webcam(); % Uruchamia domyślną kamerę (zadziała na Twoim Macu)
+    %cam = webcam(); % Uruchamia domyślną kamerę (zadziała na Twoim Macu)
 catch
     error('Nie wykryto kamery. Sprawdź uprawnienia w systemie.');
 end
@@ -18,11 +18,11 @@ figure('Name', 'Lab 4 - Śledzenie Znacznika', 'NumberTitle', 'off', 'Position',
 % Pętla działa dopóki okno z obrazem jest otwarte. Aby przerwać, po prostu zamknij okno.
 while ishandle(1)
     % Pobranie klatki z kamery
-    img = snapshot(cam);
+    %img = snapshot(cam);
     
     % --- KOREKCJA GEOMETRII (Wymóg z instrukcji) ---
     % ODBLOKUJ poniższą linię, jeśli wczytałeś cameraParams w kroku 1:
-    % img = undistortImage(img, cameraParams);
+    %img = undistortImage(img, cameraParams);
     
     % --- ALGORYTM ŚLEDZENIA (Progowanie HSV) ---
     % Konwersja obrazu RGB na HSV (H-Barwa, S-Nasycenie, V-Jasność)
