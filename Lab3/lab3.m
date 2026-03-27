@@ -1,5 +1,13 @@
 clear all; close all; clc;
 
+%Wynik
+%====================================================================
+%Współczynniki Radial Distortion: [0.2686, -1.1587]
+%Współczynniki Tangential Distortion: [0.0000, 0.0000]
+%Ogniskowa (Focal Length): [842.94, 843.19]
+%====================================================================
+
+
 files = {'portfel1.jpeg', 'portfel2.jpeg', 'zegarek1.jpeg'};
 
 % Kalibracja
