@@ -1,0 +1,5 @@
+/Users/maksymiliantonak/Documents/code/psmoveapi/build/CMakeFiles/psmoveapi.dir
+/Users/maksymiliantonak/Documents/code/psmoveapi/build/CMakeFiles/psmoveapi_static.dir
+/Users/maksymiliantonak/Documents/code/psmoveapi/build/CMakeFiles/psmovepair.dir
+/Users/maksymiliantonak/Documents/code/psmoveapi/build/CMakeFiles/edit_cache.dir
+/Users/maksymiliantonak/Documents/code/psmoveapi/build/CMakeFiles/rebuild_cache.dir

@@ -1,0 +1,147 @@
+#!/bin/bash -x -e
+#
+# Script to build Mac OS X binary snapshots of PS Move API
+# Thomas Perl <m@thp.io>; 2012-09-28
+#
+
+export PSMOVEAPI_CHECKOUT=$(pwd)
+export OPENCV_CHECKOUT_DIR=$PSMOVEAPI_CHECKOUT/external/opencv
+export OPENCV_INSTALL_DIR=$OPENCV_CHECKOUT_DIR/build/install
+
+# For parallel builds
+MAKE_ARGS=-j4
+
+# Take version from Debian package info (manual parsing...)
+PSMOVEAPI_VERSION=$(grep -m 1 -o "psmoveapi (.*)" debian/changelog |
+                    sed -e 's/psmoveapi (\(.*\))/\1/')
+
+# Git revision identifier
+PSMOVEAPI_REVISION=$(git describe --long --tags)
+
+# By default, we build a snapshot. If "release" is the first argument, we
+# build a release (do not add date and Git revision information to version)
+if [ "$1" != "release" ]; then
+    PSMOVEAPI_VERSION=${PSMOVEAPI_VERSION}~$(date +%F)+${PSMOVEAPI_REVISION}
+fi
+
+if [ ! -f $PSMOVEAPI_CHECKOUT/CMakeLists.txt ]; then
+    echo "ERROR: You have to run this script in the PS Move API source root."
+    exit 1
+fi
+
+# Download the eigen library needed for orientation estimation
+(
+    cd $PSMOVEAPI_CHECKOUT/external
+    hg clone https://bitbucket.org/eigen/eigen
+)
+
+# Build libusb-1.0 as universal static library
+# needed for the PS3EYEDriver to access the PSEye
+# otherwise we'd dynamically link against some the Homebrew libusb
+(
+    cd $PSMOVEAPI_CHECKOUT/external/libusb-1.0
+    export ARCHFLAGS='-arch x86_64'
+    export CFLAGS="$CFLAGS $ARCHFLAGS"
+    export CXXFLAGS="$CXXFLAGS $ARCHFLAGS"
+    ./autogen.sh
+    ./configure
+    ./configure
+    make ${MAKE_ARGS}
+)
+
+cd $PSMOVEAPI_CHECKOUT
+
+# Build OpenCV
+if [ ! -d $OPENCV_INSTALL_DIR ]; then
+    cd external
+    if [ ! -d opencv ]; then
+        git clone git://github.com/Itseez/opencv.git
+    fi
+    cd opencv
+    rm -rf build
+    mkdir -p build
+    cd build
+    cmake -DBUILD_SHARED_LIBS=OFF \
+          -DBUILD_PERF_TESTS=OFF \
+          -DBUILD_TESTS=OFF \
+          -DBUILD_DOCS=OFF \
+          -DBUILD_FAT_JAVA_LIB=OFF \
+          -DBUILD_PACKAGE=OFF \
+          -DBUILD_opencv_apps=OFF \
+          -DBUILD_opencv_calib3d=ON \
+          -DBUILD_opencv_flann=ON \
+          -DBUILD_opencv_features2d=OFF \
+          -DBUILD_opencv_objdetect=OFF \
+          -DBUILD_opencv_photo=OFF \
+          -DBUILD_opencv_shape=OFF \
+          -DBUILD_opencv_stitching=OFF \
+          -DBUILD_opencv_superres=OFF \
+          -DBUILD_opencv_ts=OFF \
+          -DBUILD_opencv_ml=ON \
+          -DBUILD_opencv_video=OFF \
+          -DBUILD_opencv_videostab=OFF \
+          -DBUILD_opencv_world=OFF \
+          -DBUILD_opencv_java=OFF \
+          -DWITH_OPENEXR=OFF \
+          -DWITH_FFMPEG=OFF \
+          -DWITH_JASPER=OFF \
+          -DWITH_TIFF=OFF \
+          -DCMAKE_OSX_ARCHITECTURES="x86_64" \
+          -DCMAKE_INSTALL_PREFIX=$(pwd)/install ..
+    make ${MAKE_ARGS}
+    make install
+fi
+
+# Build SDL2
+(
+    cd $PSMOVEAPI_CHECKOUT/external/SDL2
+    curl https://www.libsdl.org/release/SDL2-2.0.3.dmg > SDL2.dmg
+    hdiutil attach SDL2.dmg
+    cp -r /Volumes/SDL2/SDL2.framework ~/Library/Frameworks/SDL2.framework/
+    hdiutil detach /Volumes/SDL2
+#    ./autogen.sh
+#    ./configure
+#    make ${MAKE_ARGS}
+)
+
+cd $PSMOVEAPI_CHECKOUT
+
+# Build PS Move API
+PSMOVEAPI_PREFIX=/opt/psmoveapi_${PSMOVEAPI_VERSION}/
+rm -rf build
+mkdir build
+cd build
+cmake -DPSMOVE_BUILD_CSHARP_BINDINGS=ON \
+      -DPSMOVE_BUILD_EXAMPLES=ON \
+      -DPSMOVE_BUILD_JAVA_BINDINGS=ON \
+      -DPSMOVE_BUILD_OPENGL_EXAMPLES=ON \
+      -DPSMOVE_BUILD_PROCESSING_BINDINGS=ON \
+      -DPSMOVE_BUILD_TRACKER=ON \
+      -DPSMOVE_USE_PS3EYE_DRIVER=ON \
+      -DCMAKE_INSTALL_PREFIX=$PSMOVEAPI_PREFIX ..
+      #-DPSMOVE_USE_DEBUG=ON
+make ${MAKE_ARGS}
+mkdir tmp
+DESTDIR=$(pwd)/tmp make install
+
+cd $PSMOVEAPI_CHECKOUT
+
+# Packaging
+rm -rf dist
+mkdir -p dist
+echo $PSMOVEAPI_REVISION >dist/revision.txt
+cp -rpv build/tmp/* dist/
+
+cd $PSMOVEAPI_CHECKOUT
+
+# Tar it up
+PACKAGE_NAME=psmoveapi_${PSMOVEAPI_VERSION}_osx108
+rm -rf $PACKAGE_NAME
+mv dist $PACKAGE_NAME
+mkdir -p upload
+tar czvf upload/${PACKAGE_NAME}.tgz $PACKAGE_NAME
+rm -rf $PACKAGE_NAME
+
+# Copy the Processing bindings
+cp build/psmove_processing_macosx.zip upload/${PACKAGE_NAME}_processing.zip
+
