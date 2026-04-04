@@ -1,76 +1,89 @@
-%% Lab 4: Śledzenie znacznika wideo
-clear all; close all; clc;
+clear all; 
+close all; clc;
 
-%% 1. Wczytanie parametrów z Lab 3 (Korekcja geometrii)
-% ODBLOKUJ poniższą linię, jeśli zapisałeś parametry z poprzedniego zadania:
-% load('moje_parametry.mat'); 
+% Kalibracja Kamery
+files = {'portfel1.jpeg', 'portfel2.jpeg', 'zegarek1.jpeg'};
+[imagePoints, boardSize] = detectCheckerboardPoints(files);
+squareSize = 25; 
+worldPoints = generateCheckerboardPoints(boardSize, squareSize);
+tempImg = imread(files{1});
+cameraParams = estimateCameraParameters(imagePoints, worldPoints, 'ImageSize', [size(tempImg,1), size(tempImg,2)]);
 
-%% 2. Inicjalizacja kamery
 try
-    %cam = webcam(); % Uruchamia domyślną kamerę (zadziała na Twoim Macu)
+    cam = webcam(); 
 catch
-    error('Nie wykryto kamery. Sprawdź uprawnienia w systemie.');
+    error('Błąd: Nie można połączyć się z kamerą.');
 end
 
-figure('Name', 'Lab 4 - Śledzenie Znacznika', 'NumberTitle', 'off', 'Position', [100, 100, 1000, 500]);
+targetSize = cameraParams.Intrinsics.ImageSize; 
+testFrame = snapshot(cam);
+camSize = [size(testFrame, 1), size(testFrame, 2)]; 
 
-%% 3. Pętla przetwarzania w czasie rzeczywistym
-% Pętla działa dopóki okno z obrazem jest otwarte. Aby przerwać, po prostu zamknij okno.
-while ishandle(1)
-    % Pobranie klatki z kamery
-    %img = snapshot(cam);
+liveFig = figure('Name', 'Lab 4', 'NumberTitle', 'off', 'Position', [400, 50, 600, 950]);
+
+% HSV dla wykrywanego koloru
+hMin1 = 0.00; hMax1 = 0.05; hMin2 = 0.95; hMax2 = 1.00;
+sMin = 0.65; sMax = 1.00; vMin = 0.40; vMax = 1.00;
+
+win1 = subplot(3, 1, 1); hOrig = imshow(zeros(camSize)); title('Oryginał (RAW)');
+win2 = subplot(3, 1, 2); hUndist = imshow(zeros(camSize)); title('Po Korekcji');
+win3 = subplot(3, 1, 3); hTrack = imshow(zeros(camSize)); title('Maska');
+
+disp('Program uruchomiony.');
+
+% Pętla Przetwarzania
+while ishandle(liveFig)
+    % Pobranie klatki i Korekcja
+    trueFrame = snapshot(cam);
+    calcFrame = imresize(trueFrame, targetSize); 
+    undistortedCalc = undistortImage(calcFrame, cameraParams);
+    undistortedDisplay = imresize(undistortedCalc, camSize); 
     
-    % --- KOREKCJA GEOMETRII (Wymóg z instrukcji) ---
-    % ODBLOKUJ poniższą linię, jeśli wczytałeś cameraParams w kroku 1:
-    %img = undistortImage(img, cameraParams);
+    % Tworzenie maski
+    hsvImg = rgb2hsv(undistortedDisplay);
+    mask = ((hsvImg(:,:,1) >= hMin1 & hsvImg(:,:,1) <= hMax1) | ...
+            (hsvImg(:,:,1) >= hMin2 & hsvImg(:,:,1) <= hMax2)) & ...
+            (hsvImg(:,:,2) >= sMin & hsvImg(:,:,2) <= sMax) & ...
+            (hsvImg(:,:,3) >= vMin & hsvImg(:,:,3) <= vMax);
+    mask = imclose(mask, strel('disk', 15));
+    mask = imopen(mask, strel('disk', 5));
     
-    % --- ALGORYTM ŚLEDZENIA (Progowanie HSV) ---
-    % Konwersja obrazu RGB na HSV (H-Barwa, S-Nasycenie, V-Jasność)
-    hsv_img = rgb2hsv(img);
-    H = hsv_img(:,:,1); 
-    S = hsv_img(:,:,2); 
-    V = hsv_img(:,:,3);
+    maskedRGB = undistortedDisplay;
+    bgPixels = repmat(~mask, [1, 1, 3]);
+    maskedRGB(bgPixels) = uint8(double(maskedRGB(bgPixels)) * 0.15);
     
-    % Zdefiniowanie progów dla koloru ZIELONEGO
-    % (Wyświetl jaskrawozielone koło/kwadrat na telefonie, żeby przetestować)
-    h_min = 0.25; h_max = 0.45; 
-    s_min = 0.40; s_max = 1.00; 
-    v_min = 0.30; v_max = 1.00; 
+    % Położenie
+    stats = regionprops(mask, 'Centroid', 'Area', 'BoundingBox');
     
-    % Progowanie - tworzenie maski binarnej
-    mask = (H >= h_min) & (H <= h_max) & ...
-           (S >= s_min) & (S <= s_max) & ...
-           (V >= v_min) & (V <= v_max);
-           
-    % Oczyszczanie maski: zostawiamy tylko jeden, największy wykryty obiekt
-    mask = bwareafilt(mask, 1); 
+    % Aktualizacja obrazów
+    set(hOrig, 'CData', trueFrame);
+    set(hUndist, 'CData', undistortedDisplay);
+    set(hTrack, 'CData', maskedRGB);
     
-    % --- OKREŚLENIE LOKALIZACJI ---
-    stats = regionprops(mask, 'Centroid', 'BoundingBox');
-    
-    tracked_img = img; % Kopia obrazu do narysowania znaczników
-    
+    % Ramka
+    axes_list = [win1, win2, win3];
+    for i = 1:3
+        hold(axes_list(i), 'on');
+        delete(findobj(axes_list(i), 'Type', 'rectangle')); 
+        delete(findobj(axes_list(i), 'Type', 'text'));
+    end
+
     if ~isempty(stats)
-        % Pobranie współrzędnych środka ciężkości i prostokąta otaczającego
-        centroid = stats(1).Centroid;
-        bbox = stats(1).BoundingBox;
+        [~, idx] = max([stats.Area]);
+        bBox = stats(idx).BoundingBox;
+        centroid = stats(idx).Centroid;
         
-        % Rysowanie znacznika (prostokąt + czerwony krzyżyk na środku) - POPRAWIONA SKŁADNIA
-        tracked_img = insertShape(tracked_img, 'Rectangle', bbox, 'Color', 'green', 'LineWidth', 3);
-        tracked_img = insertMarker(tracked_img, centroid, 'x', 'Color', 'red', 'Size', 10);
+        for i = 1:3
+            rectangle(axes_list(i), 'Position', bBox, 'EdgeColor', [0 1 0], 'LineWidth', 2);
+            text(axes_list(i), bBox(1), bBox(2) - 15, ...
+                sprintf('X: %.0f, Y: %.0f', centroid(1), centroid(2)), ...
+                'Color', 'green', 'FontSize', 10, 'FontWeight', 'bold', 'BackgroundColor', 'black');
+        end
     end
     
-    % --- WYŚWIETLANIE ---
-    subplot(1,2,1);
-    imshow(tracked_img);
-    title('Obraz po korekcji ze śledzeniem');
+    for i = 1:3, hold(axes_list(i), 'off'); end
     
-    subplot(1,2,2);
-    imshow(mask);
-    title('Maska (wykryty kolor)');
-    
-    drawnow; % Odświeżenie widoku
+    drawnow limitrate; 
 end
 
-% Zakończenie pracy z kamerą po zamknięciu okna
 clear cam;
